@@ -283,7 +283,7 @@ if train_btn:
         k3.metric("Alpha (超额收益)", f"{alpha*100:.1f}%", delta="CV Key Metric")
         
         st.success(f"""
-        ✅ **写作**: 
+        ✅ 
         "Backtested on {ticker} historical data (2021), the RL agent achieved a **Sharpe Ratio of {sharpe_ratio:.2f}**, 
         generating a **{total_return*100:.1f}% cumulative return** and outperforming the benchmark by **{alpha*100:.1f}%** (Alpha)."
         """)
