@@ -145,10 +145,10 @@ def get_real_stock_data(ticker="NVDA", start="2021-01-01", end="2021-06-01"):
 
 # 4. UI 
 
-st.title("🤖 Reinforcement Learning Quantitative Trader")
+st.title(" Reinforcement Learning Quantitative Trader")
 st.markdown("""
 * **核心技术:** Reinforcement Learning (Q-Learning), MDP, Quantitative Analysis
-* **数据源:** Real Market Data (Yahoo Finance)
+* **数据源:** Real Market Data (From Yahoo Finance)
 """)
 st.divider()
 
@@ -157,7 +157,7 @@ col1, col2 = st.columns([1, 3])
 with col1:
     st.subheader("⚙️ 参数设置")
     ticker = st.text_input("股票代码", "NVDA")
-    episodes = st.slider("训练轮数 (Episodes)", 10, 100, 50)
+    episodes = st.slider("训练轮数", 10, 100, 50)
     train_btn = st.button("🚀 开始训练 & 回测", type="primary")
     
     st.info("""
@@ -282,7 +282,7 @@ if train_btn:
         k3.metric("Alpha (超额收益)", f"{alpha*100:.1f}%", delta="CV Key Metric")
         
         st.success(f"""
-        ✅ **写作建议**: 
+        ✅ **写作**: 
         "Backtested on {ticker} historical data (2021), the RL agent achieved a **Sharpe Ratio of {sharpe_ratio:.2f}**, 
         generating a **{total_return*100:.1f}% cumulative return** and outperforming the benchmark by **{alpha*100:.1f}%** (Alpha)."
         """)
