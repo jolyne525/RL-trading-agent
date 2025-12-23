@@ -4,6 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 import yfinance as yf  
+import time
 
 #  1. 页面配置 
 st.set_page_config(page_title="算法交易智能体", page_icon="🤖", layout="wide")
