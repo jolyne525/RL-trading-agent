@@ -1,9 +1,14 @@
 # 📈 Reinforcement Learning for Algorithmic Trading
 
+[![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github)](https://github.com/jolyne525/RLtradingagent.git)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://rltradingagent-bpgaqfvcpgg2tnc7mhlxga.streamlit.app/)
+
 This project implements a Deep Q-Network (DQN) agent to learn and optimize trading strategies based on historical stock data via reinforcement learning (RL).
 
-**🔗 Live Demo:** *https://rltradingagent-bpgaqfvcpgg2tnc7mhlxga.streamlit.app/*  
-**🧠 GitHub Repo:** https://github.com/jolyne525/RLtradingagent.git
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/37c6c58c-21b3-4c3d-944e-dea37b364258" alt="RL Trading Agent Dashboard" width="900">
+</p>
+
 
 ---
 
