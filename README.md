@@ -1,42 +1,47 @@
-# 🤖 RLtradingagent: Reinforcement Learning for Algorithmic Trading
+# 📈 Reinforcement Learning for Algorithmic Trading
 
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
+This project implements a Deep Q-Network (DQN) agent to learn and optimize trading strategies based on historical stock data via reinforcement learning (RL).
 
-[![Streamlit](https://img.shields.io/badge/Streamlit-App-ff4b4b)](https://streamlit.io/)
+**🔗 Live Demo:** *[Add your Streamlit Cloud URL here]*  
+**🧠 GitHub Repo:** https://github.com/jolyne525/RLtradingagent.git
 
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+---
 
-## Project Overview
+## 💡 Project Highlights
 
-This project demonstrates a **Reinforcement Learning (RL)** agent designed for automated stock trading. Built with **Streamlit** for interactivity, the agent utilizes **Q-Learning** with linear function approximation to make trading decisions (Buy, Sell, Hold) based on market state representations.
+- 📊 **MDP Modeling:** Trading is framed as a Markov Decision Process (MDP) with:
+  - **States:** [daily return, position flag, bias term]
+  - **Actions:** {0: hold, 1: buy, 2: sell}
+  - **Rewards:** Change in net worth minus transaction cost penalty
 
-The system simulates a Markov Decision Process (MDP) on real historical data (via `yfinance`), aiming to maximize the **Sharpe Ratio** and **Total Returns** while managing transaction costs.
+- 🧠 **DQN Agent:** 
+  - Epsilon-greedy exploration
+  - TD learning with value iteration
+  - Linear neural net with one hidden layer
 
-## Key Features
+- 🔁 **Walk-forward Backtesting:** 
+  - Automatic split into training (70%) and test (30%)
+  - Prevents look-ahead bias
 
-* **Interactive Training**: Visualize the Q-Learning process in real-time as the agent iterates through episodes.
-* **Real-World Data**: Fetches real-time stock data (e.g., NVDA, AAPL) using the Yahoo Finance API.
-* **Performance Metrics**: Automatically calculates key financial metrics for CVs:
-    * **Alpha** (Excess Return vs. Benchmark)
-    * **Sharpe Ratio** (Risk-adjusted Return)
-    * **Cumulative Return**
-* **Strategy Comparison**: Benchmarks the RL agent against a standard "Buy & Hold" strategy.
-* **Interpretability**: Uses a linear approximation for Q-values to maintain transparency in decision logic.
+- 📈 **Performance Metrics:** 
+  - Cumulative return
+  - Sharpe ratio
+  - Maximum drawdown
+  - Turnover (trading volume)
 
-## Methodology (MDP Formulation)
+- 📉 **Benchmarked** against Buy & Hold strategy
 
-The trading problem is modeled as an MDP $(S, A, P, R)$:
+- 📊 **Interactive Dashboard:**
+  - Visualizes buy/sell markers
+  - Compares equity curves across episodes
+  - Multi-ticker support and training visualization
 
-* **State Space ($S$)**: A vector representing market conditions:
-    $$S_t = [\text{Daily Return}, \text{Holding Status}, \text{Bias}]$$
-* **Action Space ($A$)**: Discrete actions $\{0: \text{Hold}, 1: \text{Buy}, 2: \text{Sell}\}$.
-* **Reward Function ($R$)**:
-    $$R_t = \Delta \text{NetWorth} - \text{Transaction Cost}$$
-    The agent is penalized for excessive trading to simulate realistic friction costs.
+---
 
-## Installation & Usage
+## 🚀 Run It Locally
 
 ### 1. Clone the Repository
+
 ```bash
 git clone https://github.com/jolyne525/RLtradingagent.git
 cd RLtradingagent
