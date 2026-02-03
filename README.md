@@ -2,7 +2,7 @@
 
 This project implements a Deep Q-Network (DQN) agent to learn and optimize trading strategies based on historical stock data via reinforcement learning (RL).
 
-**🔗 Live Demo:** *[Add your Streamlit Cloud URL here]*  
+**🔗 Live Demo:** *https://rltradingagent-bpgaqfvcpgg2tnc7mhlxga.streamlit.app/*  
 **🧠 GitHub Repo:** https://github.com/jolyne525/RLtradingagent.git
 
 ---
