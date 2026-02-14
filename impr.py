@@ -1,18 +1,28 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-import plotly.express as px
-import yfinance as yf
-import time
+"""
+Streamlit entry for RLtradingagent (DQN with replay + target network).
 
-# -------------------------
-# 页面配置
-# -------------------------
+Run:
+  streamlit run impr_agent.py
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from typing import Dict, List
+
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+
+import rltrader as rt
+
+
 st.set_page_config(page_title="RL Trading Agent", page_icon="🤖", layout="wide")
 
-# 轻量 UI 美化：metric 卡片化
-st.markdown("""
+st.markdown(
+    """
 <style>
 div[data-testid="stMetric"]{
   background:#f6f8fa;
@@ -22,9 +32,12 @@ div[data-testid="stMetric"]{
 }
 .block-container{padding-top: 2rem;}
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-def beautify_fig(fig, title=None, ytitle=None):
+
+def beautify_fig(fig: go.Figure, title: str | None = None, ytitle: str | None = None) -> go.Figure:
     fig.update_layout(
         template="plotly_white",
         hovermode="x unified",
@@ -38,395 +51,213 @@ def beautify_fig(fig, title=None, ytitle=None):
     return fig
 
 
-# -------------------------
-# 股票市场环境 MDP 定义
-# -------------------------
-class StockEnvironment:
-    """
-    模拟股票市场环境 (MDP)。
-    状态: [今日收益率, 持仓标志, 偏置项]
-    动作: 0=持有, 1=买入, 2=卖出
-    奖励: 净值变动 + 交易成本惩罚 (每次交易 -0.05)
-    """
-    def __init__(self, data, initial_balance=10000):
-        self.data = data.reset_index(drop=True)
-        self.initial_balance = float(initial_balance)
-        self.reset()
-
-    def reset(self):
-        self.step_index = 0
-        self.balance = float(self.initial_balance)
-        self.shares = 0
-        self.net_worth = float(self.initial_balance)
-        self.trade_volume = 0.0
-        self.history = []
-        return self._get_state()
-
-    def _get_state(self):
-        # 强制输出为 float32，避免 Streamlit / numpy 组合类型造成 ValueError
-        if self.step_index >= len(self.data):
-            return np.zeros(3, dtype=np.float32)
-
-        price = float(self.data.loc[self.step_index, "Close"])
-
-        if self.step_index > 0:
-            prev_price = float(self.data.loc[self.step_index - 1, "Close"])
-            pct_change = (price - prev_price) / prev_price if prev_price != 0 else 0.0
-        else:
-            pct_change = 0.0
-
-        has_position = 1.0 if self.shares > 0 else 0.0
-        return np.array([float(pct_change), float(has_position), 1.0], dtype=np.float32)
-
-    def step(self, action):
-        current_price = float(self.data.loc[self.step_index, "Close"])
-        prev_net_worth = float(self.net_worth)
-        reward = 0.0
-
-        if action == 1:  # Buy
-            if self.balance >= current_price:
-                self.shares += 1
-                self.balance -= current_price
-                reward -= 0.05
-                self.trade_volume += current_price
-
-        elif action == 2:  # Sell
-            if self.shares > 0:
-                self.shares -= 1
-                self.balance += current_price
-                reward -= 0.05
-                self.trade_volume += current_price
-
-        self.net_worth = float(self.balance + self.shares * current_price)
-        reward += (self.net_worth - prev_net_worth)
-
-        self.history.append({
-            "step": int(self.step_index),
-            "date": self.data.loc[self.step_index, "Date"],
-            "price": float(current_price),
-            "action": int(action),
-            "net_worth": float(self.net_worth),
-        })
-
-        self.step_index += 1
-        done = self.step_index >= len(self.data) - 1
-        next_state = self._get_state()
-        return next_state, float(reward), bool(done)
+@st.cache_data(show_spinner=False)
+def cached_get_data(ticker: str, start: str, end: str) -> pd.DataFrame:
+    return rl.get_real_stock_data(ticker=ticker, start=start, end=end)
 
 
-# -------------------------
-# DQN Agent（你现在这版是手写一层隐藏层的 DQN 近似）
-# -------------------------
-class DQNAgent:
-    """
-    深度Q网络代理 (DQN)，使用一层隐藏层近似，ε-贪心探索 + TD 更新
-    """
-    def __init__(self, state_size, action_size, hidden_size=16):
-        self.state_size = state_size
-        self.action_size = action_size
-        self.hidden_size = hidden_size
-
-        self.w1 = np.random.rand(self.state_size, self.hidden_size) - 0.5
-        self.b1 = np.zeros(self.hidden_size)
-        self.w2 = np.random.rand(self.hidden_size, self.action_size) - 0.5
-        self.b2 = np.zeros(self.action_size)
-
-        self.learning_rate = 0.1
-        self.gamma = 0.95
-        self.epsilon = 1.0
-        self.epsilon_decay = 0.95
-        self.epsilon_min = 0.01
-
-    def act(self, state):
-        if np.random.rand() <= self.epsilon:
-            return np.random.randint(self.action_size)
-
-        z1 = np.dot(state, self.w1) + self.b1
-        hidden = np.where(z1 > 0, z1, 0)  # ReLU
-        q_values = np.dot(hidden, self.w2) + self.b2
-        return int(np.argmax(q_values))
-
-    def learn(self, state, action, reward, next_state):
-        z1 = np.dot(state, self.w1) + self.b1
-        hidden = np.where(z1 > 0, z1, 0)
-        q_values = np.dot(hidden, self.w2) + self.b2
-
-        z1_next = np.dot(next_state, self.w1) + self.b1
-        hidden_next = np.where(z1_next > 0, z1_next, 0)
-        q_next = np.dot(hidden_next, self.w2) + self.b2
-
-        target = reward + self.gamma * np.max(q_next)
-        error = target - q_values[action]
-
-        # 输出层
-        self.w2[:, action] += self.learning_rate * error * hidden
-        self.b2[action] += self.learning_rate * error
-
-        # 隐藏层
-        hidden_grad = error * self.w2[:, action]
-        hidden_grad = hidden_grad * (hidden > 0)
-        self.w1 += self.learning_rate * np.outer(state, hidden_grad)
-        self.b1 += self.learning_rate * hidden_grad
-
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
-
-
-# -------------------------
-# 数据获取（修复 yfinance MultiIndex / Close 非标量问题）
-# -------------------------
-@st.cache_data
-def get_real_stock_data(ticker="NVDA", start="2021-01-01", end="2021-06-01"):
-    try:
-        df = yf.download(ticker, start=start, end=end, progress=False)
-        if df.empty:
-            return pd.DataFrame()
-
-        df = df.reset_index()
-
-        # MultiIndex 列名摊平
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = [c[0] for c in df.columns]
-
-        close = df["Adj Close"] if "Adj Close" in df.columns else df["Close"]
-        if isinstance(close, pd.DataFrame):  # 极少数情况
-            close = close.iloc[:, 0]
-
-        close = pd.to_numeric(close, errors="coerce")
-        out = pd.DataFrame({"Date": df["Date"], "Close": close}).dropna()
-
-        # 防止 Date 不是 datetime
-        out["Date"] = pd.to_datetime(out["Date"])
-        return out.reset_index(drop=True)
-
-    except Exception as e:
-        st.error(f"数据下载失败: {e}")
-        return pd.DataFrame()
-
-
-# -------------------------
-# 顶部标题
-# -------------------------
 st.title("Reinforcement Learning Quantitative Trader")
-st.caption("DQN (epsilon-greedy + TD learning) · Walk-forward Train/Test · Benchmark vs Buy&Hold · Sharpe / MDD / Turnover")
+st.caption("DQN (Replay + Target Net + optional Double DQN) · Walk-forward Train/Test · Benchmark vs Buy&Hold · Sharpe / MDD / Turnover")
 
-
-# -------------------------
-# Sidebar 参数区（页面会立刻更好看）
-# -------------------------
 with st.sidebar:
     st.header("⚙️ Settings")
+
     ticker_input = st.text_input("Tickers (comma-separated)", "NVDA")
-    episodes = st.slider("Episodes", 10, 150, 50, step=10)
-    initial_balance = st.number_input("Initial Balance", value=10000, step=1000)
+    episodes = st.slider("Episodes", 10, 500, 100, step=10)
+    seed = st.number_input("Random Seed", value=42, step=1)
+
+    st.subheader("Data Window")
     start_date = st.text_input("Start (YYYY-MM-DD)", "2021-01-01")
     end_date = st.text_input("End (YYYY-MM-DD)", "2021-06-01")
+
+    st.subheader("Execution Model")
+    initial_balance = st.number_input("Initial Balance", value=10000, step=1000)
+    trade_size = st.number_input("Trade Size (shares)", value=1, step=1, min_value=1)
+    fixed_cost = st.number_input("Fixed Cost / Trade", value=0.05, step=0.01, format="%.4f")
+    cost_bps = st.number_input("Proportional Cost (bps)", value=0.0, step=1.0, format="%.2f")
+    slippage_bps = st.number_input("Slippage (bps)", value=0.0, step=1.0, format="%.2f")
+
+    st.subheader("DQN Hyperparams")
+    hidden_size = st.select_slider("Hidden Size", options=[16, 32, 64, 128], value=64)
+    gamma = st.slider("Gamma (discount)", 0.80, 0.999, 0.99, step=0.001)
+    learning_rate = st.select_slider("Learning Rate", options=[1e-4, 3e-4, 1e-3, 3e-3, 1e-2], value=1e-3)
+    batch_size = st.select_slider("Batch Size", options=[32, 64, 128, 256], value=64)
+    buffer_size = st.select_slider("Replay Buffer Size", options=[10_000, 50_000, 100_000], value=50_000)
+    min_buffer_size = st.select_slider("Min Buffer To Train", options=[256, 1_000, 2_000, 5_000], value=1_000)
+    target_update_every = st.select_slider("Target Update Every (steps)", options=[250, 500, 1_000, 2_000], value=1_000)
+    double_dqn = st.checkbox("Double DQN", value=True)
+
+    st.subheader("Exploration")
+    epsilon_start = st.slider("Epsilon Start", 0.1, 1.0, 1.0, step=0.05)
+    epsilon_end = st.slider("Epsilon End", 0.0, 0.2, 0.05, step=0.01)
+    epsilon_decay_steps = st.select_slider("Epsilon Decay Steps", options=[0, 5_000, 10_000, 20_000, 50_000], value=20_000)
+
+    st.subheader("Backtest / Metrics")
+    train_ratio = st.slider("Train Ratio", 0.5, 0.9, 0.7, step=0.05)
+    rf_annual = st.slider("Risk-free (annual)", 0.0, 0.10, 0.02, step=0.005)
+
     train_btn = st.button("🚀 Train & Backtest", type="primary")
 
-    with st.expander("MDP & Reward", expanded=True):
-        st.write("- State: [daily return, position flag, bias]")
+    with st.expander("MDP Summary", expanded=True):
+        st.write("- State: [daily return, position flag, bias] (3D)")
         st.write("- Actions: hold / buy / sell")
-        st.write("- Reward: Δnet_worth - transaction_cost (to reduce over-trading)")
+        st.write("- Reward: Δ(net worth) scaled by 1/initial_balance")
+        st.write("- DQN: Replay Buffer + Target Network (+ Double DQN optional)")
+        st.write("- Note: research/education demo, not financial advice.")
 
 
-# Tabs（更像作品集）
 tab_overview, tab_trades, tab_perf, tab_training = st.tabs(["Overview", "Trades", "Performance", "Training"])
 
 
-# -------------------------
-# 默认预览（未点击训练）
-# -------------------------
-if 'market_data' not in st.session_state:
-    st.session_state.market_data = get_real_stock_data("NVDA", start_date, end_date)
-
-df_preview = st.session_state.market_data
+# Preview (always reflect latest inputs)
+preview_ticker = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
+preview_ticker = preview_ticker[0] if preview_ticker else "NVDA"
+df_preview = cached_get_data(preview_ticker, start_date, end_date)
 
 if not train_btn:
     with tab_overview:
-        st.info("👈 在左侧设置参数，然后点击 **Train & Backtest**")
+        st.info("👈 Set parameters in the sidebar, then click **Train & Backtest**.")
         if df_preview is not None and not df_preview.empty:
-            fig_preview = px.line(df_preview, x="Date", y="Close", title="Price Preview")
-            beautify_fig(fig_preview, title="Price Preview", ytitle="Close")
-            st.plotly_chart(fig_preview, use_container_width=True)
+            fig_preview = px.line(df_preview, x="Date", y="Close", title=f"{preview_ticker} Price Preview")
+            st.plotly_chart(beautify_fig(fig_preview, title="Price Preview", ytitle="Close"), use_container_width=True)
         else:
-            st.warning("没有预览数据（可能是网络/代码错误或日期范围无数据）")
+            st.warning("No preview data (check network or date range).")
     st.stop()
 
 
-# -------------------------
-# 训练 + 回测
-# -------------------------
+# Run
+rl.set_global_seed(int(seed))
+
 tickers = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
-results = []
+results: List[Dict[str, object]] = []
+
+env_cfg = rl.TradingEnvConfig(
+    initial_balance=float(initial_balance),
+    trade_size=int(trade_size),
+    fixed_cost=float(fixed_cost),
+    cost_bps=float(cost_bps),
+    slippage_bps=float(slippage_bps),
+    reward_scale=1.0,  # will be normalized by rl
+)
+
+dqn_cfg = rl.DQNConfig(
+    state_size=3,
+    action_size=3,
+    hidden_size=int(hidden_size),
+    gamma=float(gamma),
+    learning_rate=float(learning_rate),
+    buffer_size=int(buffer_size),
+    batch_size=int(batch_size),
+    min_buffer_size=int(min_buffer_size),
+    target_update_every=int(target_update_every),
+    double_dqn=bool(double_dqn),
+    epsilon_start=float(epsilon_start),
+    epsilon_end=float(epsilon_end),
+    epsilon_decay_steps=int(epsilon_decay_steps),
+)
+
+bt_cfg = rl.BacktestConfig(
+    train_ratio=float(train_ratio),
+    rf_annual=float(rf_annual),
+    trading_days=252,
+)
+
+t0 = time.time()
+progress = st.progress(0.0)
+status = st.empty()
 
 try:
-    total_iterations = len(tickers) * episodes
-    current_iter = 0
-    progress_bar = st.progress(0.0)
-    status_text = st.empty()
-
-    t0 = time.time()
-    for ticker in tickers:
-        df = get_real_stock_data(ticker, start_date, end_date)
-        if df.empty or len(df) < 20:
-            st.error(f"{ticker} 数据不足（可能日期范围太短或下载失败）")
+    for i, ticker in enumerate(tickers):
+        status.code(f"Running {ticker} ...")
+        df = cached_get_data(ticker, start_date, end_date)
+        if df.empty or len(df) < 40:
+            st.error(f"{ticker}: insufficient data (short date range or download failure).")
             st.stop()
 
-        # walk-forward: train/test split（70/30）
-        train_size = int(len(df) * 0.7)
-        train_df = df.iloc[:train_size].copy()
-        test_df = df.iloc[train_size:].copy()
+        res = rl.train_and_backtest_single(
+            ticker=ticker,
+            df=df,
+            episodes=int(episodes),
+            seed=int(seed),
+            env_cfg=env_cfg,
+            dqn_cfg=dqn_cfg,
+            bt_cfg=bt_cfg,
+        )
+        results.append(res)
+        progress.progress((i + 1) / len(tickers))
 
-        env_train = StockEnvironment(train_df, initial_balance=initial_balance)
-        agent = DQNAgent(state_size=3, action_size=3)
-
-        first_episode_history = None
-        mid_episode_history = None
-        final_episode_history = None
-        mid_index = episodes // 2
-
-        # train
-        for e in range(episodes):
-            state = env_train.reset()
-            done = False
-            total_reward = 0.0
-            while not done:
-                action = agent.act(state)
-                next_state, reward, done = env_train.step(action)
-                agent.learn(state, action, reward, next_state)
-                state = next_state
-                total_reward += reward
-
-            if e == 0:
-                first_episode_history = env_train.history.copy()
-            if e == mid_index:
-                mid_episode_history = env_train.history.copy()
-            if e == episodes - 1:
-                final_episode_history = env_train.history.copy()
-
-            current_iter += 1
-            progress_bar.progress(current_iter / total_iterations)
-            status_text.code(f"{ticker} | Episode {e+1}/{episodes} | Reward: {total_reward:.2f} | Epsilon: {agent.epsilon:.2f}")
-
-        # test（关闭探索）
-        env_test = StockEnvironment(test_df, initial_balance=initial_balance)
-        state = env_test.reset()
-        agent.epsilon = 0.0
-        done = False
-        while not done:
-            action = agent.act(state)
-            next_state, reward, done = env_test.step(action)
-            state = next_state
-
-        history_df = pd.DataFrame(env_test.history)
-
-        # benchmark：buy&hold
-        init_price = float(history_df.iloc[0]["price"])
-        history_df["benchmark_nav"] = float(initial_balance) * (history_df["price"] / init_price)
-
-        # metrics
-        history_df["pct_change"] = history_df["net_worth"].pct_change().fillna(0.0)
-
-        strat_ret = (float(history_df.iloc[-1]["net_worth"]) - float(initial_balance)) / float(initial_balance)
-        bench_ret = (float(history_df.iloc[-1]["benchmark_nav"]) - float(initial_balance)) / float(initial_balance)
-        alpha = strat_ret - bench_ret
-
-        rf = 0.02 / 252
-        excess = history_df["pct_change"] - rf
-        sharpe = 0.0
-        if np.std(excess) != 0:
-            sharpe = float(np.mean(excess) / np.std(excess) * np.sqrt(252))
-
-        cummax = history_df["net_worth"].cummax()
-        dd = 1 - history_df["net_worth"] / cummax
-        mdd = float(dd.max())
-
-        turnover = float(env_test.trade_volume) / float(initial_balance)
-
-        results.append({
-            "ticker": ticker,
-            "history_df": history_df,
-            "drawdown": dd,
-            "metrics": {
-                "Cumulative Return": strat_ret,
-                "Benchmark Return": bench_ret,
-                "Alpha": alpha,
-                "Sharpe": sharpe,
-                "Max Drawdown": mdd,
-                "Turnover": turnover
-            },
-            "first_ep": first_episode_history,
-            "mid_ep": mid_episode_history,
-            "last_ep": final_episode_history
-        })
-
-    progress_bar.empty()
-    status_text.empty()
+    progress.empty()
+    status.empty()
     st.success(f"✅ Done. Total time: {time.time() - t0:.2f}s")
 
 except Exception as e:
-    st.error("训练/回测发生异常（已做防护显示，页面不会炸）。请检查日志或按下面异常提示定位。")
+    st.error("Training/backtest crashed. See details below.")
     st.exception(e)
     st.stop()
 
 
-# -------------------------
-# 可视化
-# -------------------------
+def metrics_row(ticker: str, metrics: Dict[str, float]) -> Dict[str, str]:
+    return {
+        "Ticker": ticker,
+        "Return (%)": f"{metrics['Cumulative Return']*100:.2f}",
+        "Benchmark (%)": f"{metrics['Benchmark Return']*100:.2f}",
+        "Alpha (%)": f"{metrics['Alpha']*100:.2f}",
+        "Sharpe": f"{metrics['Sharpe']:.2f}",
+        "Max DD (%)": f"{metrics['Max Drawdown']*100:.2f}",
+        "Turnover (%)": f"{metrics.get('Turnover', float('nan'))*100:.2f}",
+        "Trades": f"{int(metrics.get('Num Trades', 0))}",
+    }
+
+
+# Visualize
 if len(results) > 1:
-    # 多股票
     with tab_overview:
         st.subheader("Equity Curves (RL vs Buy&Hold)")
         fig = go.Figure()
         palette = px.colors.qualitative.Plotly
 
         for i, res in enumerate(results):
-            color = palette[i % len(palette)]
             dfh = res["history_df"]
+            color = palette[i % len(palette)]
+            fig.add_trace(go.Scatter(x=dfh["date"], y=dfh["net_worth"], mode="lines", name=f"{res['ticker']} RL", line=dict(width=3)))
+            fig.add_trace(go.Scatter(x=dfh["date"], y=dfh["benchmark_nav"], mode="lines", name=f"{res['ticker']} Buy&Hold", line=dict(width=2, dash="dash")))
 
-            fig.add_trace(go.Scatter(
-                x=dfh["date"], y=dfh["net_worth"],
-                mode="lines", name=f"{res['ticker']} RL",
-                line=dict(color=color, width=3)
-            ))
-            fig.add_trace(go.Scatter(
-                x=dfh["date"], y=dfh["benchmark_nav"],
-                mode="lines", name=f"{res['ticker']} Buy&Hold",
-                line=dict(color=color, width=2, dash="dash")
-            ))
-
-        beautify_fig(fig, title="Equity Curves", ytitle="Net Worth ($)")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(beautify_fig(fig, title="Equity Curves", ytitle="Net Worth ($)"), use_container_width=True)
 
     with tab_perf:
         st.subheader("Metrics Table")
-        rows = []
-        for r in results:
-            m = r["metrics"]
-            rows.append({
-                "Ticker": r["ticker"],
-                "Return (%)": f"{m['Cumulative Return']*100:.2f}",
-                "Benchmark (%)": f"{m['Benchmark Return']*100:.2f}",
-                "Alpha (%)": f"{m['Alpha']*100:.2f}",
-                "Sharpe": f"{m['Sharpe']:.2f}",
-                "Max DD (%)": f"{m['Max Drawdown']*100:.2f}",
-                "Turnover (%)": f"{m['Turnover']*100:.2f}",
-            })
+        rows = [metrics_row(r["ticker"], r["metrics"]) for r in results]
         st.dataframe(pd.DataFrame(rows), use_container_width=True)
 
+        st.subheader("Download Results")
+        for r in results:
+            dfh = r["history_df"]
+            st.download_button(
+                label=f"Download {r['ticker']} equity history CSV",
+                data=dfh.to_csv(index=False).encode("utf-8"),
+                file_name=f"{r['ticker']}_equity_history.csv",
+                mime="text/csv",
+            )
+            st.download_button(
+                label=f"Download {r['ticker']} run config JSON",
+                data=json.dumps(r["configs"], ensure_ascii=False, indent=2).encode("utf-8"),
+                file_name=f"{r['ticker']}_run_config.json",
+                mime="application/json",
+            )
+
     with tab_trades:
-        st.info("多股票模式默认不展示单只股票的买卖点（避免图表太乱）。")
+        st.info("Multi-ticker mode: trade markers are hidden to avoid clutter. Use single ticker for detailed signals.")
 
     with tab_training:
-        st.info("多股票模式默认不展示训练轮次对比（你需要的话我也可以加一个下拉选择 ticker 来展示）。")
+        st.info("Multi-ticker mode: training curves are omitted by default. Use single ticker for episode curves.")
 
 else:
-    # 单股票
-    res = results[0]
-    ticker = res["ticker"]
-    dfh = res["history_df"]
-    dd = res["drawdown"]
-    m = res["metrics"]
+    r = results[0]
+    ticker = r["ticker"]
+    dfh = r["history_df"]
+    dd = r["drawdown"]
+    m = r["metrics"]
+    curves = r["train_curves"]
 
     with tab_overview:
         c1, c2, c3 = st.columns(3)
@@ -434,87 +265,53 @@ else:
         c2.metric("Sharpe", f"{m['Sharpe']:.2f}")
         c3.metric("Max Drawdown", f"{m['Max Drawdown']*100:.2f}%")
 
-        c4, c5 = st.columns(2)
+        c4, c5, c6 = st.columns(3)
         c4.metric("Alpha", f"{m['Alpha']*100:.2f}%")
-        c5.metric("Turnover", f"{m['Turnover']*100:.2f}%")
+        c5.metric("Turnover", f"{m.get('Turnover', float('nan'))*100:.2f}%")
+        c6.metric("#Trades", f"{int(m.get('Num Trades', 0))}")
 
         fig_nav = go.Figure()
-        fig_nav.add_trace(go.Scatter(
-            x=dfh["date"], y=dfh["net_worth"],
-            mode="lines", name="RL Equity", line=dict(width=3)
-        ))
-        fig_nav.add_trace(go.Scatter(
-            x=dfh["date"], y=dfh["benchmark_nav"],
-            mode="lines", name="Buy&Hold", line=dict(dash="dash")
-        ))
-        beautify_fig(fig_nav, title=f"{ticker} Equity Curve", ytitle="Net Worth ($)")
-        st.plotly_chart(fig_nav, use_container_width=True)
+        fig_nav.add_trace(go.Scatter(x=dfh["date"], y=dfh["net_worth"], mode="lines", name="RL Equity", line=dict(width=3)))
+        fig_nav.add_trace(go.Scatter(x=dfh["date"], y=dfh["benchmark_nav"], mode="lines", name="Buy&Hold", line=dict(dash="dash")))
+        st.plotly_chart(beautify_fig(fig_nav, title=f"{ticker} Equity Curve", ytitle="Net Worth ($)"), use_container_width=True)
 
     with tab_trades:
         st.subheader("Trade Decisions (Buy/Sell markers)")
         fig_price = go.Figure()
-        fig_price.add_trace(go.Scatter(
-            x=dfh["date"], y=dfh["price"], mode="lines",
-            name="Price", line=dict(width=1)
-        ))
+        fig_price.add_trace(go.Scatter(x=dfh["date"], y=dfh["price"], mode="lines", name="Price", line=dict(width=1)))
 
-        buy = dfh[dfh["action"] == 1]
-        sell = dfh[dfh["action"] == 2]
+        buy = dfh[(dfh["action"] == 1) & (dfh["executed"] == True)]
+        sell = dfh[(dfh["action"] == 2) & (dfh["executed"] == True)]
 
-        fig_price.add_trace(go.Scatter(
-            x=buy["date"], y=buy["price"],
-            mode="markers", name="Buy",
-            marker=dict(symbol="triangle-up", size=8, opacity=0.85)
-        ))
-        fig_price.add_trace(go.Scatter(
-            x=sell["date"], y=sell["price"],
-            mode="markers", name="Sell",
-            marker=dict(symbol="triangle-down", size=8, opacity=0.85)
-        ))
+        fig_price.add_trace(go.Scatter(x=buy["date"], y=buy["price"], mode="markers", name="Buy", marker=dict(symbol="triangle-up", size=8, opacity=0.85)))
+        fig_price.add_trace(go.Scatter(x=sell["date"], y=sell["price"], mode="markers", name="Sell", marker=dict(symbol="triangle-down", size=8, opacity=0.85)))
 
-        beautify_fig(fig_price, title=f"{ticker} Price + Signals", ytitle="Price")
-        st.plotly_chart(fig_price, use_container_width=True)
+        st.plotly_chart(beautify_fig(fig_price, title=f"{ticker} Price + Signals", ytitle="Price"), use_container_width=True)
+
+        st.subheader("Download Single-Ticker Results")
+        st.download_button("Download equity history CSV", data=dfh.to_csv(index=False).encode("utf-8"), file_name=f"{ticker}_equity_history.csv", mime="text/csv")
+        st.download_button("Download run config JSON", data=json.dumps(r["configs"], ensure_ascii=False, indent=2).encode("utf-8"), file_name=f"{ticker}_run_config.json", mime="application/json")
 
     with tab_perf:
         st.subheader("Drawdown")
         fig_dd = go.Figure()
-        fig_dd.add_trace(go.Scatter(
-            x=dfh["date"], y=dd,
-            mode="lines", name="Drawdown"
-        ))
-        beautify_fig(fig_dd, title="Drawdown Curve", ytitle="Drawdown")
-        st.plotly_chart(fig_dd, use_container_width=True)
+        fig_dd.add_trace(go.Scatter(x=dfh["date"], y=dd, mode="lines", name="Drawdown"))
+        st.plotly_chart(beautify_fig(fig_dd, title="Drawdown Curve", ytitle="Drawdown"), use_container_width=True)
 
         st.subheader("Metrics Detail")
-        st.write({
-            "Return": f"{m['Cumulative Return']*100:.2f}%",
-            "Benchmark": f"{m['Benchmark Return']*100:.2f}%",
-            "Alpha": f"{m['Alpha']*100:.2f}%",
-            "Sharpe": f"{m['Sharpe']:.2f}",
-            "Max Drawdown": f"{m['Max Drawdown']*100:.2f}%",
-            "Turnover": f"{m['Turnover']*100:.2f}%"
-        })
+        st.json({k: float(v) if isinstance(v, (int, float)) else v for k, v in m.items()})
 
     with tab_training:
-        st.subheader("Learning Progress (Episode 1 / Mid / Last)")
-        first_ep = pd.DataFrame(res["first_ep"])
-        mid_ep = pd.DataFrame(res["mid_ep"]) if res["mid_ep"] is not None else None
-        last_ep = pd.DataFrame(res["last_ep"])
+        st.subheader("Training Curves")
+        df_curves = pd.DataFrame(
+            {
+                "episode": range(1, len(curves["episode_reward"]) + 1),
+                "reward": curves["episode_reward"],
+                "loss": curves["episode_loss"],
+            }
+        )
+        fig_r = px.line(df_curves, x="episode", y="reward", title="Episode Reward (sum of scaled rewards)")
+        st.plotly_chart(beautify_fig(fig_r, title="Episode Reward", ytitle="Reward"), use_container_width=True)
 
-        fig_learn = go.Figure()
-        fig_learn.add_trace(go.Scatter(
-            x=first_ep["date"], y=first_ep["net_worth"],
-            mode="lines", name="Episode 1", line=dict(dash="dash")
-        ))
-        if mid_ep is not None:
-            fig_learn.add_trace(go.Scatter(
-                x=mid_ep["date"], y=mid_ep["net_worth"],
-                mode="lines", name="Mid Episode", line=dict(dash="dashdot")
-            ))
-        fig_learn.add_trace(go.Scatter(
-            x=last_ep["date"], y=last_ep["net_worth"],
-            mode="lines", name="Last Episode", line=dict(width=3)
-        ))
-
-        beautify_fig(fig_learn, title="Training Equity Curves", ytitle="Net Worth ($)")
-        st.plotly_chart(fig_learn, use_container_width=True)
+        fig_l = px.line(df_curves, x="episode", y="loss", title="Average TD Loss per Episode (NaN before buffer warms up)")
+        st.plotly_chart(beautify_fig(fig_l, title="Episode Loss", ytitle="Loss"), use_container_width=True)
