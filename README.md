@@ -1,6 +1,6 @@
 # 📈 Reinforcement Learning for Algorithmic Trading (DQN)
 
-[![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github)](https://github.com/jolyne525/RLtradingagent)
+[![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github)](https://github.com/jolyne525/RL-trading-agent)
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://rltradingagent-bpgaqfvcpgg2tnc7mhlxga.streamlit.app/)
 
 This project formulates single-asset trading as a **Markov Decision Process (MDP)** and trains a **Deep Q-Network (DQN)** agent on historical daily prices. It provides:
@@ -157,7 +157,7 @@ The CLI runner writes:
 ## 📂 Project Structure
 
 ```text
-RLtradingagent/
+RL-trading-agent/
   rltrader/
     __init__.py            # Package exports / public API
     config.py              # Dataclasses for env/DQN/backtest configs
