@@ -19,7 +19,7 @@ from datetime import datetime
 
 import pandas as pd
 
-import rltrader as rt
+import rttrader as rt
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,12 +62,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    rl.set_global_seed(args.seed)
+    rt.set_global_seed(args.seed)
 
     tickers = [t.strip().upper() for t in args.tickers.split(",") if t.strip()]
     os.makedirs(args.out_dir, exist_ok=True)
 
-    env_cfg = rl.TradingEnvConfig(
+    env_cfg = rt.TradingEnvConfig(
         initial_balance=args.initial_balance,
         trade_size=args.trade_size,
         fixed_cost=args.fixed_cost,
@@ -76,7 +76,7 @@ def main() -> None:
         reward_scale=1.0,
     )
 
-    dqn_cfg = rl.DQNConfig(
+    dqn_cfg = rt.DQNConfig(
         state_size=3,
         action_size=3,
         hidden_size=args.hidden_size,
@@ -92,18 +92,18 @@ def main() -> None:
         epsilon_decay_steps=args.epsilon_decay_steps,
     )
 
-    bt_cfg = rl.BacktestConfig(train_ratio=args.train_ratio, rf_annual=args.rf_annual, trading_days=252)
+    bt_cfg = rt.BacktestConfig(train_ratio=args.train_ratio, rf_annual=args.rf_annual, trading_days=252)
 
     rows = []
     run_tag = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
 
     for ticker in tickers:
-        df = rl.get_real_stock_data(ticker, args.start, args.end)
+        df = rt.get_real_stock_data(ticker, args.start, args.end)
         if df.empty or len(df) < 40:
             print(f"[WARN] {ticker}: insufficient data. Skipping.")
             continue
 
-        res = rl.train_and_backtest_single(
+        res = rt.train_and_backtest_single(
             ticker=ticker,
             df=df,
             episodes=args.episodes,
