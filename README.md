@@ -1,7 +1,7 @@
 # 📈 Reinforcement Learning for Algorithmic Trading (DQN)
 
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github)](https://github.com/jolyne525/RL-trading-agent)
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://rltradingagent-bpgaqfvcpgg2tnc7mhlxga.streamlit.app/)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://RL-trading-agent-bpgaqfvcpgg2tnc7mhlxga.streamlit.app/)
 
 This project formulates single-asset trading as a **Markov Decision Process (MDP)** and trains a **Deep Q-Network (DQN)** agent on historical daily prices. It provides:
 
@@ -86,8 +86,8 @@ This project formulates single-asset trading as a **Markov Decision Process (MDP
 ### 1) Clone
 
 ```bash
-git clone https://github.com/jolyne525/RLtradingagent.git
-cd RLtradingagent
+git clone https://github.com/jolyne525/RL-trading-agent.git
+cd RL-trading-agent
 ```
 
 ### 2) Install Dependencies
