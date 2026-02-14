@@ -1,0 +1,18 @@
+# experiment outputs
+results/
+outputs/
+
+# python cache
+__pycache__/
+*.pyc
+
+# virtual environments
+.venv/
+venv/
+
+# mac/windows junk
+.DS_Store
+Thumbs.db
+
+# editor config (optional)
+.vscode/
