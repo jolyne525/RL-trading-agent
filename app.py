@@ -53,7 +53,7 @@ def beautify_fig(fig: go.Figure, title: str | None = None, ytitle: str | None = 
 
 @st.cache_data(show_spinner=False)
 def cached_get_data(ticker: str, start: str, end: str) -> pd.DataFrame:
-    return rl.get_real_stock_data(ticker=ticker, start=start, end=end)
+    return rt.get_real_stock_data(ticker=ticker, start=start, end=end)
 
 
 st.title("Reinforcement Learning Quantitative Trader")
@@ -126,12 +126,12 @@ if not train_btn:
 
 
 # Run
-rl.set_global_seed(int(seed))
+rt.set_global_seed(int(seed))
 
 tickers = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
 results: List[Dict[str, object]] = []
 
-env_cfg = rl.TradingEnvConfig(
+env_cfg = rt.TradingEnvConfig(
     initial_balance=float(initial_balance),
     trade_size=int(trade_size),
     fixed_cost=float(fixed_cost),
@@ -140,7 +140,7 @@ env_cfg = rl.TradingEnvConfig(
     reward_scale=1.0,  # will be normalized by rl
 )
 
-dqn_cfg = rl.DQNConfig(
+dqn_cfg = rt.DQNConfig(
     state_size=3,
     action_size=3,
     hidden_size=int(hidden_size),
@@ -156,7 +156,7 @@ dqn_cfg = rl.DQNConfig(
     epsilon_decay_steps=int(epsilon_decay_steps),
 )
 
-bt_cfg = rl.BacktestConfig(
+bt_cfg = rt.BacktestConfig(
     train_ratio=float(train_ratio),
     rf_annual=float(rf_annual),
     trading_days=252,
@@ -174,7 +174,7 @@ try:
             st.error(f"{ticker}: insufficient data (short date range or download failure).")
             st.stop()
 
-        res = rl.train_and_backtest_single(
+        res = rt.train_and_backtest_single(
             ticker=ticker,
             df=df,
             episodes=int(episodes),
