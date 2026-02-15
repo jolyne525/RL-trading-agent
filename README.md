@@ -1,4 +1,3 @@
-````md
 # 📈 Reinforcement Learning for Algorithmic Trading (DQN)
 
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github)](https://github.com/jolyne525/RL-trading-agent)
