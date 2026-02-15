@@ -2,7 +2,7 @@
 Streamlit entry for RLtradingagent (DQN with replay + target network).
 
 Run:
-  streamlit run impr_agent.py
+  streamlit run app.py
 """
 
 from __future__ import annotations
