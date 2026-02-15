@@ -4,7 +4,12 @@ Headless batch runner (no Streamlit) to generate reproducible CSV results.
 Example:
   python run_experiments.py --tickers NVDA,AAPL --start 2021-01-01 --end 2021-06-01 --episodes 200 --seed 42
 
-Outputs:
+Outputs (timestamped):
+  results/{RUN_TAG}_summary.csv
+  results/{RUN_TAG}_{TICKER}_equity_history.csv
+  results/{RUN_TAG}_{TICKER}_run_config.json
+
+Also writes stable filenames (overwrite each run):
   results/summary.csv
   results/{TICKER}_equity_history.csv
   results/{TICKER}_run_config.json
@@ -15,7 +20,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from datetime import datetime
+import shutil
+import time
+from datetime import datetime, timezone
 
 import pandas as pd
 
@@ -56,7 +63,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--train_ratio", type=float, default=0.7)
     p.add_argument("--rf_annual", type=float, default=0.02)
 
+    # io / throttling
     p.add_argument("--out_dir", type=str, default="results")
+    p.add_argument(
+        "--sleep_between",
+        type=float,
+        default=1.5,
+        help="Sleep seconds between tickers to reduce yfinance rate limiting.",
+    )
     return p.parse_args()
 
 
@@ -95,9 +109,13 @@ def main() -> None:
     bt_cfg = rt.BacktestConfig(train_ratio=args.train_ratio, rf_annual=args.rf_annual, trading_days=252)
 
     rows = []
-    run_tag = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    run_tag = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
-    for ticker in tickers:
+    for i, ticker in enumerate(tickers):
+        # throttle between tickers (rate limit mitigation)
+        if i > 0 and args.sleep_between > 0:
+            time.sleep(args.sleep_between)
+
         df = rt.get_real_stock_data(ticker, args.start, args.end)
         if df.empty or len(df) < 40:
             print(f"[WARN] {ticker}: insufficient data. Skipping.")
@@ -118,6 +136,7 @@ def main() -> None:
         metrics_row = {"Ticker": ticker, **metrics}
         rows.append(metrics_row)
 
+        # timestamped outputs
         equity_path = os.path.join(args.out_dir, f"{run_tag}_{ticker}_equity_history.csv")
         dfh.to_csv(equity_path, index=False)
 
@@ -125,12 +144,26 @@ def main() -> None:
         with open(cfg_path, "w", encoding="utf-8") as f:
             json.dump(res["configs"], f, ensure_ascii=False, indent=2)
 
+        # stable outputs (overwrite each run)
+        stable_equity = os.path.join(args.out_dir, f"{ticker}_equity_history.csv")
+        stable_cfg = os.path.join(args.out_dir, f"{ticker}_run_config.json")
+        dfh.to_csv(stable_equity, index=False)
+        with open(stable_cfg, "w", encoding="utf-8") as f:
+            json.dump(res["configs"], f, ensure_ascii=False, indent=2)
+
         print(f"[OK] {ticker}: wrote {equity_path} and {cfg_path}")
 
     summary = pd.DataFrame(rows)
     summary_path = os.path.join(args.out_dir, f"{run_tag}_summary.csv")
     summary.to_csv(summary_path, index=False)
-    print(f"[DONE] summary -> {summary_path}")
+
+    # stable summary filename for README/scripts
+    stable_summary = os.path.join(args.out_dir, "summary.csv")
+    shutil.copyfile(summary_path, stable_summary)
+
+    if summary.empty:
+        print("[WARN] No tickers succeeded (rate limit / download failure). Summary may be empty.")
+    print(f"[DONE] summary -> {summary_path} (and {stable_summary})")
 
 
 if __name__ == "__main__":
