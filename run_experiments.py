@@ -19,7 +19,7 @@ from datetime import datetime
 
 import pandas as pd
 
-import rttrader as rt
+import rltrader as rt
 
 
 def parse_args() -> argparse.Namespace:
