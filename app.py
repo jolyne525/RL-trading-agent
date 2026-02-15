@@ -52,12 +52,21 @@ def beautify_fig(fig: go.Figure, title: str | None = None, ytitle: str | None = 
 
 
 @st.cache_data(show_spinner=False)
-def cached_get_data(ticker: str, start: str, end: str) -> pd.DataFrame:
-    return rt.get_real_stock_data(ticker=ticker, start=start, end=end)
+def cached_get_data(ticker: str, start: str, end: str, data_source: str, cache_dir: str) -> pd.DataFrame:
+    return rt.get_real_stock_data(
+        ticker=ticker,
+        start=start,
+        end=end,
+        data_source=data_source,
+        cache_dir=cache_dir,
+        use_cache=True,
+    )
 
 
 st.title("Reinforcement Learning Quantitative Trader")
-st.caption("DQN (Replay + Target Net + optional Double DQN) · Walk-forward Train/Test · Benchmark vs Buy&Hold · Sharpe / MDD / Turnover")
+st.caption(
+    "DQN (Replay + Target Net + optional Double DQN) · Walk-forward Train/Test · Benchmark vs Buy&Hold · Sharpe / MDD / Turnover"
+)
 
 with st.sidebar:
     st.header("⚙️ Settings")
@@ -69,6 +78,22 @@ with st.sidebar:
     st.subheader("Data Window")
     start_date = st.text_input("Start (YYYY-MM-DD)", "2021-01-01")
     end_date = st.text_input("End (YYYY-MM-DD)", "2021-06-01")
+
+    st.subheader("Data Source")
+    data_source = st.selectbox(
+        "Provider",
+        options=["auto", "yahoo", "stooq"],
+        index=0,
+        help="auto: try Yahoo first then fallback to Stooq; yahoo: yfinance; stooq: stooq.com CSV",
+    )
+    cache_dir = st.text_input(
+        "Cache dir (local)",
+        value="data_cache",
+        help="Local folder to cache downloaded price data (recommended).",
+    )
+    if st.button("Clear Streamlit Cache"):
+        st.cache_data.clear()
+        st.success("Streamlit cache cleared. Re-run to refresh data.")
 
     st.subheader("Execution Model")
     initial_balance = st.number_input("Initial Balance", value=10000, step=1000)
@@ -112,7 +137,7 @@ tab_overview, tab_trades, tab_perf, tab_training = st.tabs(["Overview", "Trades"
 # Preview (always reflect latest inputs)
 preview_ticker = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
 preview_ticker = preview_ticker[0] if preview_ticker else "NVDA"
-df_preview = cached_get_data(preview_ticker, start_date, end_date)
+df_preview = cached_get_data(preview_ticker, start_date, end_date, data_source, cache_dir)
 
 if not train_btn:
     with tab_overview:
@@ -121,7 +146,7 @@ if not train_btn:
             fig_preview = px.line(df_preview, x="Date", y="Close", title=f"{preview_ticker} Price Preview")
             st.plotly_chart(beautify_fig(fig_preview, title="Price Preview", ytitle="Close"), use_container_width=True)
         else:
-            st.warning("No preview data (check network or date range).")
+            st.warning("No preview data (check network/date range/provider).")
     st.stop()
 
 
@@ -169,7 +194,7 @@ status = st.empty()
 try:
     for i, ticker in enumerate(tickers):
         status.code(f"Running {ticker} ...")
-        df = cached_get_data(ticker, start_date, end_date)
+        df = cached_get_data(ticker, start_date, end_date, data_source, cache_dir)
         if df.empty or len(df) < 40:
             st.error(f"{ticker}: insufficient data (short date range or download failure).")
             st.stop()
@@ -219,8 +244,25 @@ if len(results) > 1:
         for i, res in enumerate(results):
             dfh = res["history_df"]
             color = palette[i % len(palette)]
-            fig.add_trace(go.Scatter(x=dfh["date"], y=dfh["net_worth"], mode="lines", name=f"{res['ticker']} RL", line=dict(width=3)))
-            fig.add_trace(go.Scatter(x=dfh["date"], y=dfh["benchmark_nav"], mode="lines", name=f"{res['ticker']} Buy&Hold", line=dict(width=2, dash="dash")))
+            _ = color  # keep for potential future styling
+            fig.add_trace(
+                go.Scatter(
+                    x=dfh["date"],
+                    y=dfh["net_worth"],
+                    mode="lines",
+                    name=f"{res['ticker']} RL",
+                    line=dict(width=3),
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=dfh["date"],
+                    y=dfh["benchmark_nav"],
+                    mode="lines",
+                    name=f"{res['ticker']} Buy&Hold",
+                    line=dict(width=2, dash="dash"),
+                )
+            )
 
         st.plotly_chart(beautify_fig(fig, title="Equity Curves", ytitle="Net Worth ($)"), use_container_width=True)
 

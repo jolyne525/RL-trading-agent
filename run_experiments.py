@@ -13,6 +13,10 @@ Also writes stable filenames (overwrite each run):
   results/summary.csv
   results/{TICKER}_equity_history.csv
   results/{TICKER}_run_config.json
+
+Data source:
+  --data_source auto|yahoo|stooq
+  --cache_dir   local cache folder for downloaded price data
 """
 
 from __future__ import annotations
@@ -69,8 +73,24 @@ def parse_args() -> argparse.Namespace:
         "--sleep_between",
         type=float,
         default=1.5,
-        help="Sleep seconds between tickers to reduce yfinance rate limiting.",
+        help="Sleep seconds between tickers to reduce upstream rate limiting.",
     )
+
+    # data source + cache
+    p.add_argument(
+        "--data_source",
+        type=str,
+        default="auto",
+        choices=["auto", "yahoo", "stooq"],
+        help="Price data provider: auto (yahoo->stooq fallback), yahoo, or stooq.",
+    )
+    p.add_argument(
+        "--cache_dir",
+        type=str,
+        default="data_cache",
+        help="Local cache directory for downloaded price data.",
+    )
+
     return p.parse_args()
 
 
@@ -106,17 +126,28 @@ def main() -> None:
         epsilon_decay_steps=args.epsilon_decay_steps,
     )
 
-    bt_cfg = rt.BacktestConfig(train_ratio=args.train_ratio, rf_annual=args.rf_annual, trading_days=252)
+    bt_cfg = rt.BacktestConfig(
+        train_ratio=args.train_ratio,
+        rf_annual=args.rf_annual,
+        trading_days=252,
+    )
 
-    rows = []
+    rows: list[dict] = []
     run_tag = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
     for i, ticker in enumerate(tickers):
-        # throttle between tickers (rate limit mitigation)
         if i > 0 and args.sleep_between > 0:
-            time.sleep(args.sleep_between)
+            time.sleep(float(args.sleep_between))
 
-        df = rt.get_real_stock_data(ticker, args.start, args.end)
+        df = rt.get_real_stock_data(
+            ticker=ticker,
+            start=args.start,
+            end=args.end,
+            data_source=args.data_source,
+            cache_dir=args.cache_dir,
+            use_cache=True,
+        )
+
         if df.empty or len(df) < 40:
             print(f"[WARN] {ticker}: insufficient data. Skipping.")
             continue
@@ -133,14 +164,13 @@ def main() -> None:
 
         dfh = res["history_df"]
         metrics = res["metrics"]
-        metrics_row = {"Ticker": ticker, **metrics}
-        rows.append(metrics_row)
+
+        rows.append({"Ticker": ticker, **metrics})
 
         # timestamped outputs
         equity_path = os.path.join(args.out_dir, f"{run_tag}_{ticker}_equity_history.csv")
-        dfh.to_csv(equity_path, index=False)
-
         cfg_path = os.path.join(args.out_dir, f"{run_tag}_{ticker}_run_config.json")
+        dfh.to_csv(equity_path, index=False)
         with open(cfg_path, "w", encoding="utf-8") as f:
             json.dump(res["configs"], f, ensure_ascii=False, indent=2)
 
@@ -162,7 +192,7 @@ def main() -> None:
     shutil.copyfile(summary_path, stable_summary)
 
     if summary.empty:
-        print("[WARN] No tickers succeeded (rate limit / download failure). Summary may be empty.")
+        print("[WARN] No tickers succeeded (download failure / rate limit). Summary may be empty.")
     print(f"[DONE] summary -> {summary_path} (and {stable_summary})")
 
 
