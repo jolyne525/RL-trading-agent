@@ -1,4 +1,4 @@
-# 📈 Reinforcement Learning for Algorithmic Trading (DQN)
+# Reinforcement Learning for Algorithmic Trading (DQN)
 
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-blue?logo=github)](https://github.com/jolyne525/RL-trading-agent)
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://RL-trading-agent-bpgaqfvcpgg2tnc7mhlxga.streamlit.app/)
@@ -13,17 +13,10 @@ This project formulates single-asset trading as a **Markov Decision Process (MDP
 
 > Note: research/education demo only. Not financial advice.
 
----
-
-## 🖼️ Demo Preview
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/37c6c58c-21b3-4c3d-944e-dea37b364258" alt="RL Trading Agent Dashboard" width="900">
-</p>
 
 ---
 
-## ✨ What This Project Demonstrates
+## What This Project Demonstrates
 
 - **MDP Modeling (Trading as Decision Process)**  
   Compact state representation with discrete actions (hold/buy/sell), and a reward derived from **Δ(net worth)**.
@@ -45,7 +38,7 @@ This project formulates single-asset trading as a **Markov Decision Process (MDP
 
 ---
 
-## 🔧 Method Overview
+## Method Overview
 
 ### 1) MDP Design
 
@@ -74,7 +67,7 @@ This project formulates single-asset trading as a **Markov Decision Process (MDP
 
 ---
 
-## 🚀 Quick Start (Run Locally)
+## Quick Start (Run Locally)
 
 ### 0) Requirements
 
@@ -111,7 +104,7 @@ Open the URL shown in the terminal (usually [http://localhost:8501](http://local
 
 ---
 
-## 🧪 Run Batch Experiments (Headless CLI)
+## Run Batch Experiments (Headless CLI)
 
 This generates reproducible artifacts under `results/`.
 
@@ -141,7 +134,7 @@ python run_experiments.py --tickers NVDA --start 2016-01-01 --end 2024-01-01 \
 
 ---
 
-## 📦 Results (Out-of-sample)
+## Results (Out-of-sample)
 
 Metrics are computed on the **walk-forward test split** and benchmarked against **Buy & Hold**.
 All reported values come from `results/summary.csv` and the corresponding test equity curves.
@@ -180,7 +173,7 @@ python run_experiments.py --tickers AAPL,NVDA --start 2016-01-01 --end 2024-01-0
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```text
 RL-trading-agent/
@@ -205,7 +198,7 @@ RL-trading-agent/
 
 ---
 
-## ⚠️ Research Notes & Limitations
+## Research Notes & Limitations
 
 This repository is designed as a **research/engineering baseline** for RL-driven trading, emphasizing a clean experimental pipeline and reproducibility.
 
@@ -217,7 +210,7 @@ This repository is designed as a **research/engineering baseline** for RL-driven
 
 ---
 
-## 📜 License
+## License
 
 MIT
 
